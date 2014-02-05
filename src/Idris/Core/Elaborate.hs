@@ -653,6 +653,32 @@ try' t1 t2 proofSearch
         recoverableErr (ProofSearchFail _) = False
         recoverableErr _ = True
 
+tryHarder :: Elab' aux a -> Elab' aux a -> Bool -> Elab' aux a
+tryHarder t1 t2 proofSearch
+          = do s <- get
+               ps <- get_probs
+               case prunStateT 999999 False ps t1 s of
+                    OK ((v, ps'), s') 
+                       | ps' <= length ps -> do put s'
+                                                return $! v
+                       | otherwise ->
+                                   case runStateT t2 s of
+                                       OK (v, s') -> do put s'; return $! v
+                                       Error e2 -> lift (tfail e2)
+                    Error e1 -> if recoverableErr e1 then
+                                   case runStateT t2 s of
+                                       OK (v, s') -> do put s'; return $! v
+                                       Error e2 -> if score e1 >= score e2
+                                                      then lift (tfail e1)
+                                                      else lift (tfail e2)
+                                   else lift (tfail e1)
+  where recoverableErr err@(CantUnify r x y _ _ _)
+             = -- traceWhen r (show err) $
+               r || proofSearch
+        recoverableErr (CantSolveGoal _ _) = False
+        recoverableErr (ProofSearchFail _) = False
+        recoverableErr _ = True
+
 tryWhen :: Bool -> Elab' aux a -> Elab' aux a -> Elab' aux a
 tryWhen True a b = try a b
 tryWhen False a b = a

@@ -240,7 +240,7 @@ elab ist info pattern opts fn tm
         = trySeq as
         where -- if none work, take the error from the first
               trySeq (x : xs) = let e1 = elab' ina x in
-                                    try' e1 (trySeq' e1 xs) True
+                                    tryHarder e1 (trySeq' e1 xs) True
               trySeq' deferr [] = proofFail deferr
               trySeq' deferr (x : xs)
                   = try' (elab' ina x) (trySeq' deferr xs) True
