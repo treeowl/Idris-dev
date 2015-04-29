@@ -24,10 +24,10 @@ rcTransTrans : {rel : Rel a} -> (eqEquiv : Equivalence eq) -> (rel `Respects2` e
 rcTransTrans _ relRespEq trns x y z (RCIncl xy) (RCIncl yz) = RCIncl (trns _ _ _ xy yz)
 rcTransTrans _ (f,g) trns x y z (RCIncl xRy) (RCRefl yEz) = RCIncl (f _ _ _ yEz xRy)
 rcTransTrans eqEquiv (f,g) trns x y z (RCRefl xEy) (RCIncl yRz) =
-  let yEx = getSymmetric eqEquiv x y xEy
+  let yEx = symm eqEquiv x y xEy
   in RCIncl (g _ _ _ yEx yRz)
-rcTransTrans eqEquiv relRespEq trns x y z (RCRefl xy) (RCRefl yz) =
-  RCRefl (getTransitive eqEquiv x y z xy yz)
+rcTransTrans eqEquiv relRespEq trns' x y z (RCRefl xy) (RCRefl yz) =
+  RCRefl (trns eqEquiv x y z xy yz)
 
 
 ||| The reflexive closure of an asymmetric relation is antisymmetric.

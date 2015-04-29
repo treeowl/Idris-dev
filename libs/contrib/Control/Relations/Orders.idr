@@ -98,13 +98,13 @@ stoComparison sto x y z xRz with (cmpr sto x y)
   | (TriEQ f w g) with (cmpr sto y z)
     stoComparison sto x y z xRz | (TriEQ f w g) | (TriLT s t u) = Right s
     stoComparison sto x y z xRz | (TriEQ f xEQy g) | (TriEQ s yEQz u) =
-       let xRy = case respEq sto of (this, _) => this x _ _ (getSymmetric (eqEquiv sto) y z yEQz) xRz in Left xRy
+       let xRy = case respEq sto of (this, _) => this x _ _ (symm (eqEquiv sto) y z yEQz) xRz in Left xRy
     stoComparison sto x y z xRz | (TriEQ f xEQy g) | (TriGT s t zRy) =
       Left $ trns sto x z y xRz zRy
   | (TriGT f g w) with (cmpr sto y z)
     stoComparison sto x y z xRz | (TriGT f g _) | (TriLT yRz s t) = Right yRz
     stoComparison sto x y z xRz | (TriGT f g _) | (TriEQ w yEQz t) =
-      Left $ case respEq sto of (this,_) => this x _ _ (getSymmetric (eqEquiv sto) y z yEQz) xRz
+      Left $ case respEq sto of (this,_) => this x _ _ (symm (eqEquiv sto) y z yEQz) xRz
     stoComparison sto x y z xRz | (TriGT f g _) | (TriGT w s zRy) =
                 absurd . f $ trns sto _ z _ xRz zRy
 
