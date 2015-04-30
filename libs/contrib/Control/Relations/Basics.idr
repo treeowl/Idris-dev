@@ -1,5 +1,5 @@
 ||| General definitions and theorems about relations
-module Relations.Basics
+module Control.Relations.Basics
 
 %default total
 %access public
