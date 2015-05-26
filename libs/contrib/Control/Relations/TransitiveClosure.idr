@@ -6,17 +6,38 @@ import Control.Relations.ClosureOperators
 %default total
 %access public
 
-||| Take the transitive closure of a relation
+||| Proof that a relation is the transitive closure of another
+IsTransitiveClosureOf : (tcrel, rel : Rel a) -> Type
+IsTransitiveClosureOf = IsClosureUnderPredOf Transitive
+
+trns : {tcrel, rel : Rel a} -> IsTransitiveClosureOf tcrel rel -> Transitive tcrel
+trns itc = satisfiesP itc
+
+||| `IsTransitiveClosureOf` respects `Equivalent`
+isTransitiveClosureOfRespEq : (r1,r2 : Rel a) ->
+                              IsTransitiveClosureOf r1 rel ->
+                              r1 `Equivalent` r2 ->
+                              IsTransitiveClosureOf r2 rel
+isTransitiveClosureOfRespEq {a} {rel} r1 r2 r1tcrel r1r2 =
+    equivToClosureClosure {a} Transitive transitiveRespectsEquiv r1 r2 rel r1tcrel r1r2
+
+||| Proof that a function on relations is the transitive closure
+IsTransitiveClosure : (tc : Rel a -> Rel a) -> Type
+IsTransitiveClosure = IsClosureUnderPred Transitive
+
+transitiveClosureIsClosureOperator : (tc : Rel a -> Rel a) ->
+                                     IsTransitiveClosure tc ->
+                                     ClosureOperator tc
+transitiveClosureIsClosureOperator tc isAlwaysTC = closureUnderPredIsClosureOperator Transitive tc isAlwaysTC
+
+||| One common construction of the transitive closure
 data TC : Rel a -> Rel a where
   TCIncl : rel x y -> TC rel x y
   TCTrans : {y : a} -> TC rel x y -> TC rel y z -> TC rel x z
 
-||| The transitive closure of a relation is transitive.
 tcTransitive : {rel : Rel a} -> Transitive (TC rel)
 tcTransitive = (\_, _, _, xRy, yRz => TCTrans xRy yRz)
 
-||| The transitive closure of a relation is the coarsest finer
-||| transitive relation.
 tcCoarsest : {rel, rel' : Rel a} -> rel `Coarser` rel' -> Transitive rel' ->
              TC rel `Coarser` rel'
 tcCoarsest rsubr' tr' x y (TCIncl xy) = rsubr' _ _ xy
@@ -25,40 +46,21 @@ tcCoarsest rsubr' tr' x z (TCTrans {y} xy yz) =
       bar = tcCoarsest rsubr' tr' y z yz
   in tr' _ _ _ foo bar
 
-tcIncreasing : {a : Type} -> Increasing (TC {a})
-tcIncreasing rel1 rel2 f x z (TCIncl xz) = TCIncl (f x z xz)
-tcIncreasing rel1 rel2 f x z (TCTrans {y} xy yz) =
-  let bar = tcIncreasing rel1 rel2 f x y xy
-      baz = tcIncreasing rel1 rel2 f y z yz
-  in tcTransitive _ _ _ bar baz
+||| `TC` is in fact the transitive closure
+tcIsTransitiveClosure : IsTransitiveClosure TC
+tcIsTransitiveClosure rel = MkIsClosureUnderPredOf (\x,y=>TCIncl) tcTransitive
+                              (\r, relr, trnsr, x, y, tcrelxy => tcCoarsest relr trnsr x y tcrelxy)
 
-tcInflationary : {a : Type} -> Inflationary (TC {a})
-tcInflationary rel x y = TCIncl
-
-tcIdempotent : {a : Type} -> Idempotent (TC {a})
-tcIdempotent {a} rel = MkEquivalent this that
-  where
-    this : (x : a) -> (y : a) -> TC rel x y -> TC (TC rel) x y
-    this x y xy = TCIncl xy
-
-    that : (x : a) -> (z : a) -> TC (TC rel) x z -> TC rel x z
-    that x z (TCIncl xz) = xz
-    that x z (TCTrans {y} xy yz) =
-      let bob = that x y xy
-          sarah = that y z yz
-      in tcTransitive _ _ _ bob sarah
-
-||| Transitive closure is a closure operator.
+||| `TC` is a closure operator
 tcIsClosureOperator : ClosureOperator TC
-tcIsClosureOperator = MkClosureOperator tcInflationary tcIncreasing tcIdempotent
+tcIsClosureOperator = closureUnderPredIsClosureOperator Transitive TC tcIsTransitiveClosure
 
--- This actually follows immediately from the fact that the transitive
--- closure is inflationary, but it's easy enough to prove directly.
 ||| The transitive closure of a reflexive relation is reflexive.
-tcReflRefl : {rel : Rel a} -> Reflexive eq rel -> Reflexive eq (TC rel)
-tcReflRefl rfl x y xEQy = TCIncl (rfl x y xEQy)
+tcReflRefl : {rel : Rel a} -> Reflexive eq rel -> tc `IsTransitiveClosureOf` rel -> Reflexive eq tc
+tcReflRefl rfler (MkIsClosureUnderPredOf tcfiner tctrns tccoarsest) x y eqxy =
+  tcfiner x y (rfler x y eqxy)
 
-||| Alternative definition of transitive closure
+||| Alternative construction of transitive closure
 data TC' : Rel a -> Rel a where
   TCIncl' : rel x y -> TC' rel x y
   TCTrans' : rel x y -> TC' rel y z -> TC' rel x z
@@ -75,6 +77,45 @@ tc'ThenTC : {rel : Rel a} -> TC' rel `Coarser` TC rel
 tc'ThenTC x z (TCIncl' xz) = TCIncl xz
 tc'ThenTC x z (TCTrans' {y} xy yz) = TCTrans (TCIncl xy) (tc'ThenTC y z yz)
 
-||| The two definitions of transitive closure are equivalent.
 tcEquivTC' : {rel : Rel a} -> Equivalent (TC rel) (TC' rel)
 tcEquivTC' = MkEquivalent tcThenTC' tc'ThenTC
+
+||| Transitive closure by the second definition is a closure operator
+tc'IsClosureOperator : ClosureOperator TC'
+tc'IsClosureOperator = equivClosureClosure TC TC' (\rel => tcEquivTC' {rel}) tcIsClosureOperator
+
+||| The alternative construction of the transitive closure is in fact
+||| the transitive closure.
+tc'IsTransitiveClosure : IsTransitiveClosure {a} TC'
+tc'IsTransitiveClosure {a} rel =
+     equivToClosureClosure {a} Transitive transitiveRespectsEquiv
+            (TC rel) (TC' rel) rel (tcIsTransitiveClosure rel) tcEquivTC'
+
+||| The transitive closure of the dual of a relation is the
+||| dual of its transitive closure.
+dualOfTransitiveClosureIsTransitiveClosureOfDual : {rel : Rel a} ->
+         IsTransitiveClosure tc ->
+         flip (tc rel) `Equivalent` tc (flip rel)
+dualOfTransitiveClosureIsTransitiveClosureOfDual {a} {rel} {tc} tctc =
+  let foo = closuresUnderSamePredEquiv Transitive (tc rel) (flip (tc (flip rel))) rel (tctc rel) fliptcflipistc
+      bar = flipPreservesEquivalence foo
+      baz = flipFlip {rel=tc (flip rel)}
+  in trns equivalentIsEquivalence _ _ _ bar baz
+  where
+    fliptcflipistc : IsClosureUnderPredOf Transitive (flip (tc (flip rel))) rel
+    fliptcflipistc with (tctc (flip rel))
+      fliptcflipistc | (MkIsClosureUnderPredOf ftcfiner ftctrans ftccoarsest) =
+        MkIsClosureUnderPredOf
+         (\x,y,relxy => ftcfiner y x relxy)
+         transFliptcflip
+         coars
+        where
+          transFliptcflip : Transitive (flip (tc (flip rel)))
+          transFliptcflip x y z xy yz = ftctrans z y x yz xy
+
+          coars : (r : Rel a) -> rel `Coarser` r -> Transitive r ->
+           (x, y : a) -> tc (flip rel) y x -> r x y
+          coars r relr rtrns x y tcfrelyx = ftccoarsest (flip r) (\q,s,sq=>relr s q sq) trnsflipr y x tcfrelyx
+            where
+              trnsflipr : Transitive (flip r)
+              trnsflipr x y z yx zy = rtrns z y x zy yx

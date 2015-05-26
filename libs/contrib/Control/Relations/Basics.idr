@@ -115,8 +115,10 @@ viewUnion (False ** pf) = Left pf
 viewUnion (True ** pf) = Right pf
 
 ||| Express that a relation is equivalent to another
-data Equivalent : (R1, R2 : Rel a) -> Type where
-  MkEquivalent : {R1,R2 : Rel a} -> Coarser R1 R2 -> Coarser R2 R1 -> Equivalent R1 R2
+record Equivalent (r1 : Rel a) (r2 : Rel a) where
+  constructor MkEquivalent 
+  to : Coarser r1 r2
+  from : Coarser r2 r1
 
 ||| An operation on relations is inflationary if the result is always
 ||| finer than the argument.
@@ -378,3 +380,41 @@ unionPreservesEquiv : {a : Type} ->
 unionPreservesEquiv {a} {b} rels1 rels2 equivs =
   MkEquivalent (unionPreservesCoarser rels1 rels2 (\m => case equivs m of {MkEquivalent this that => this}))
                (unionPreservesCoarser rels2 rels1 (\m => case equivs m of {MkEquivalent this that => that}))
+
+transitiveRespectsEquiv : (r1,r2 : Rel a) -> Transitive r1 -> r1 `Equivalent` r2 -> Transitive r2
+transitiveRespectsEquiv r1 r2 trnsr1 (MkEquivalent to from) x y z xy yz =
+  to x z (trnsr1 x y z (from x y xy) (from y z yz))
+
+flipFlip : {rel : Rel a} -> flip (flip rel) `Equivalent` rel
+flipFlip {a} {rel} = MkEquivalent to from
+  where
+    to : (x,y : a) -> flip (flip rel) x y -> rel x y
+    to x y flipfliprelxy = flipfliprelxy
+    from : (x,y : a) -> rel x y -> flip (flip rel) x y
+    from x y relxy = relxy
+
+flipPreservesEquivalence : {r1, r2 : Rel a} -> r1 `Equivalent` r2 -> flip r1 `Equivalent` flip r2
+flipPreservesEquivalence (MkEquivalent to from) = MkEquivalent (\x,y => to y x) (\x,y => from y x)
+
+unflipPreservesEquivalence : {r1, r2 : Rel a} -> flip r1 `Equivalent` flip r2 -> r1 `Equivalent` r2
+unflipPreservesEquivalence (MkEquivalent to from) = MkEquivalent (\x,y => to y x) (\x,y => from y x)
+
+transitiveThenDualTrans : {rel : Rel a} -> Transitive rel -> Transitive (flip rel)
+transitiveThenDualTrans trns x y z yx zy = trns _ _ _ zy yx
+
+dualTransitiveThenTrans : {rel : Rel a} -> Transitive (flip rel) -> Transitive rel
+dualTransitiveThenTrans trns x y z xy yz = trns _ _ _ yz xy
+
+reflexiveThenDualRefl : {rel : Rel a} -> {eq : Rel a} -> Equivalence eq -> Reflexive eq rel -> Reflexive eq (flip rel)
+reflexiveThenDualRefl eqEquiv rfl x y xeqy = rfl y x (symm eqEquiv x y xeqy)
+
+dualReflexiveThenRefl : {rel : Rel a} -> {eq : Rel a} -> Equivalence eq -> Reflexive eq (flip rel) -> Reflexive eq rel
+dualReflexiveThenRefl eqEquiv rfl x y xeqy = rfl y x (symm eqEquiv x y xeqy)
+
+symmetricThenDualSymm : {rel : Rel a} -> Symmetric rel -> Symmetric (flip rel)
+symmetricThenDualSymm symm x y xy = symm y x xy
+
+dualSymmetricThenSymm : {rel : Rel a} -> Symmetric (flip rel) -> Symmetric rel
+dualSymmetricThenSymm symm x y xy = symm y x xy
+
+--TODO Finish this silly exercise.

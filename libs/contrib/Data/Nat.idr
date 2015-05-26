@@ -4,6 +4,9 @@ module Data.Nat
 import Data.Fin
 import Data.So
 
+import Control.Relations.Basics
+import Control.Relations.ClosureOperators
+import Control.Relations.TransitiveClosure
 import Control.WellFounded
 
 %default total
@@ -45,6 +48,9 @@ ltToLTE : LT' n m -> LTE (S n) m
 ltToLTE LTSucc      = lteRefl
 ltToLTE (LTStep lt) = lteSuccRight $ ltToLTE lt
 
+lt'EquivLT : LT' `Equivalent` LT
+lt'EquivLT = MkEquivalent (\x,y => ltToLTE) (\x,y=> lteToLt')
+
 ||| Subtraction gives a result that is actually smaller.
 minusLT' : (x,y : Nat) -> x - y `LT'` S x
 minusLT' Z     y = LTSucc
@@ -55,8 +61,8 @@ minusLT' (S k) (S j) = LTStep (minusLT' k j)
 ||| zero (because there's nothing less than zero). This can't be done
 ||| for LTE, because that one doesn't stop at zero (because `LTE 0 0`
 ||| is inhabited).
-instance WellFounded LT' where
-  wellFounded x = Access (acc x)
+lt'WellFounded : WellFounded LT'
+lt'WellFounded x = Access (acc x)
     where
       ||| Show accessibility by induction on the structure of the LT' witness
       acc : (x, y : Nat) -> LT' y x -> Accessible LT' y
@@ -66,6 +72,68 @@ instance WellFounded LT' where
       acc (S y) y LTSucc = Access (acc y)
       -- If the element is more than one smaller, we need to go further
       acc (S k) y (LTStep smaller) = acc k y smaller
+
+||| `LT`, the strict less-than operator based on `LTE`, is also well-founded.
+ltWellFounded : WellFounded LT
+ltWellFounded = coarserWF LT LT' (\n, m => lteToLt' {n} {m}) lt'WellFounded
+
+{-
+-- A somewhat more direct but rather longer proof that LT is well-founded.
+-- It might pay to try to figure out if the different proofs lead to
+-- different performance for recursion.
+
+lteTrans : LTE x y -> LTE y z -> LTE x z
+lteTrans LTEZero yz = LTEZero
+lteTrans (LTESucc x) (LTESucc y) = LTESucc (lteTrans x y)
+
+lemmyh : a `LT` b -> b `LT` S c -> a `LT` c
+lemmyh (LTESucc LTEZero) (LTESucc (LTESucc x)) = LTESucc LTEZero
+lemmyh (LTESucc (LTESucc x)) (LTESucc (LTESucc (LTESucc y))) = LTESucc (LTESucc (lteTrans x y))
+
+ltWellFounded : WellFounded LT
+ltWellFounded a = Access (acc a)
+  where
+    acc : (x, y : Nat) -> LT y x -> Accessible LT y
+    acc Z y yx = absurd yx
+    acc (S k) Z yx = Access (\q, r => absurd r)
+    acc (S k) (S j) (LTESucc x) with (acc k j x)
+      acc (S k) (S j) (LTESucc x) | (Access acc') = Access (\y, ysm => Access (\w,q => acc' w (lemmyh q ysm)))
+-}
+
+||| The immediate predecessor relation
+data ImmediatelyPrecedes : Rel Nat where
+  PrecStep : n `ImmediatelyPrecedes` S n
+
+immediatelyPrecedesWF : WellFounded ImmediatelyPrecedes
+immediatelyPrecedesWF x = Access the_acc
+  where
+    the_acc : (y : Nat) -> ImmediatelyPrecedes y x -> Accessible ImmediatelyPrecedes y
+    the_acc y ip with (x)
+      the_acc y PrecStep | Z impossible
+      the_acc y PrecStep | (S y) = immediatelyPrecedesWF y
+
+lt'Transitive : Transitive LT'
+lt'Transitive x y (S y) xy LTSucc = LTStep xy
+lt'Transitive x y (S m) xy (LTStep lt) = let foo = lt'Transitive x y m xy lt in (LTStep foo)
+
+||| `LT'` is the transitive closure of `ImmediatelyPrecedes`
+lt'IsTransitiveClosureOfIP : LT' `IsTransitiveClosureOf` ImmediatelyPrecedes
+lt'IsTransitiveClosureOfIP =
+  MkIsClosureUnderPredOf
+    incl lt'Transitive coarse
+  where
+    incl : (x, y : Nat) -> ImmediatelyPrecedes x y -> LT' x y
+    incl x (S x) PrecStep = LTSucc
+    coarse : (rel : Rel Nat) -> ImmediatelyPrecedes `Coarser` rel ->
+            Transitive rel -> LT' `Coarser` rel
+    coarse rel f g x (S x) LTSucc = f x (S x) PrecStep
+    coarse rel f g x (S m) (LTStep lt) with (coarse rel f g x m lt)
+      | relxm = g x m (S m) relxm (f m (S m) PrecStep)
+
+||| `LT` is the transitive closure of `ImmediatelyPrecedes`
+ltIsTransitiveClosureOfIP : LT `IsTransitiveClosureOf` ImmediatelyPrecedes
+ltIsTransitiveClosureOfIP = isTransitiveClosureOfRespEq LT' LT lt'IsTransitiveClosureOfIP lt'EquivLT
+
 
 ||| The result of division on natural numbers.
 |||
@@ -121,7 +189,7 @@ divMod : (dividend, divisor : Nat) ->
          DivMod dividend divisor
 divMod _     Z     {nonzero} = absurd nonzero
 divMod Z     (S k)           = DivModRes 0 FZ Refl
-divMod (S j) (S k) {nonzero} = wfInd {P=P} stepDiv (S j) (S k) nonzero
+divMod (S j) (S k) {nonzero} = wfInd {P=P} lt'WellFounded stepDiv (S j) (S k) nonzero
   where
     ||| The goal passed to the accessibility eliminator.
     |||
@@ -162,5 +230,4 @@ divMod (S j) (S k) {nonzero} = wfInd {P=P} stepDiv (S j) (S k) nonzero
                  rewrite plusCommutative (finToNat remainder) (S k) in
                  rewrite sym $ plusAssociative (S k) (finToNat remainder) (mult quotient (S k)) in
                  rewrite ok in Refl
-
 

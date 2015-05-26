@@ -13,6 +13,97 @@ record ClosureOperator (f : Rel a -> Rel a) where
   incr : Increasing f
   idem : Idempotent f
 
+||| The closure of a relation under a predicate (if such exists) is the
+||| coarsest finer relation that satisfies the predicate.
+record IsClosureUnderPredOf (p : Rel a -> Type) (clrel : Rel a) (rel : Rel a) where
+  constructor MkIsClosureUnderPredOf
+  finer : rel `Coarser` clrel
+  satisfiesP : p clrel
+  coarsest : (c : Rel _) -> rel `Coarser` c -> p c -> clrel `Coarser` c
+
+||| If two relations are each the closure of another under the same predicate,
+||| then they are equivalent.
+closuresUnderSamePredEquiv : (p : Rel a -> Type) ->
+                             (cl1rel, cl2rel : Rel a) ->
+                             (rel : Rel a) ->
+                             IsClosureUnderPredOf p cl1rel rel ->
+                             IsClosureUnderPredOf p cl2rel rel ->
+                             cl1rel `Equivalent` cl2rel
+closuresUnderSamePredEquiv p cl1rel cl2rel rel cl1clrel cl2clrel =
+  let sat1 : (p cl1rel) = satisfiesP cl1clrel
+      sat2 : (p cl2rel) = satisfiesP cl2clrel
+      finer1 : (rel `Coarser` cl1rel) = finer cl1clrel
+      finer2 : (rel `Coarser` cl2rel) = finer cl2clrel
+  in MkEquivalent (coarsest cl1clrel _ finer2 sat2) (coarsest cl2clrel _ finer1 sat1)
+
+||| If `r1` is the closure under a predicate `p` of `rel`, `p` respects
+||| equivalence of relations, and `r1` is equivalent to `r2`, then `r2` is
+||| also the closure of `rel` under `p`.
+equivToClosureClosure : (p : Rel a -> Type) ->
+                        (pRespEquiv : (r1,r2 : Rel a) -> p r1 -> r1 `Equivalent` r2 -> p r2) ->
+                        (cl1rel, cl2rel : Rel a) ->
+                        (rel : Rel a) ->
+                        IsClosureUnderPredOf p cl1rel rel ->
+                        cl1rel `Equivalent` cl2rel ->
+                        IsClosureUnderPredOf p cl2rel rel
+equivToClosureClosure p pRespEquiv cl1rel cl2rel rel cl1clrel cl1cl2 =
+  MkIsClosureUnderPredOf
+    (\x, y, xy => let foo = finer cl1clrel x y xy
+                  in to cl1cl2 x y foo)
+    (let foo = satisfiesP cl1clrel
+     in pRespEquiv cl1rel cl2rel foo cl1cl2)
+    (\c, crs, pc, x, y, clrel2xy => coarsest cl1clrel c crs pc x y (from cl1cl2 x y clrel2xy))
+
+||| Proof that a function on relations is the closure under a given predicate
+IsClosureUnderPred : (p : Rel a -> Type) -> (cl : Rel a -> Rel a) -> Type
+IsClosureUnderPred {a} p cl = (rel : Rel a) -> IsClosureUnderPredOf p (cl rel) rel
+
+closureUnderPredIsInflationary : (p : Rel a -> Type) ->
+                                    (cl : Rel a -> Rel a) ->
+                                    IsClosureUnderPred p cl ->
+                                    Inflationary cl
+closureUnderPredIsInflationary p cl clclp rel = finer (clclp rel)
+
+closureUnderPredIsIncreasing : (p : Rel a -> Type) ->
+                                    (cl : Rel a -> Rel a) ->
+                                    IsClosureUnderPred p cl ->
+                                    Increasing cl
+
+closureUnderPredIsIncreasing {a} p cl clclp rel1 rel2 rel1rel2 x y clrel1xy =
+  let hum = finer (clclp rel2)
+      crsr : (rel1 `Coarser` cl rel2)
+          = (\m,n,mn=>hum m n (rel1rel2 m n mn))
+      satp : p (cl rel2)
+          = satisfiesP (clclp rel2)
+  in coarsest (clclp rel1) (cl rel2) crsr satp x y clrel1xy
+
+closureUnderPredIsIdempotent : (p : Rel a -> Type) ->
+                               (cl : Rel a -> Rel a) ->
+                               IsClosureUnderPred p cl ->
+                               Idempotent cl
+
+closureUnderPredIsIdempotent {a} p cl clclp rel =
+  MkEquivalent (closureUnderPredIsInflationary p cl clclp (cl rel)) frm
+  where
+    frm : (x, y : a) -> cl (cl rel) x y -> cl rel x y
+    frm x y clclrelxy =
+      let
+        clrelSat = satisfiesP (clclp rel)
+        clrelFiner = finer (clclp rel)
+        clclrelCoarsest = coarsest (clclp (cl rel))
+      in clclrelCoarsest (cl rel) (\p,q,r=>r) clrelSat x y clclrelxy
+
+||| The closure under a predicate, if it exists, is a closure operator.
+closureUnderPredIsClosureOperator : (p : Rel a -> Type) ->
+                                    (cl : Rel a -> Rel a) ->
+                                    IsClosureUnderPred p cl ->
+                                    ClosureOperator cl
+closureUnderPredIsClosureOperator p cl clclp =
+  MkClosureOperator
+    (closureUnderPredIsInflationary p cl clclp)
+    (closureUnderPredIsIncreasing p cl clclp)
+    (closureUnderPredIsIdempotent p cl clclp)
+
 closureOperatorPreservesEquiv : (f : Rel a -> Rel a) ->
                                 ClosureOperator f ->
                                 (r1, r2 : Rel a) ->
@@ -28,6 +119,23 @@ closureOperatorPreservesEquiv {a} f clOpf r1 r2 (MkEquivalent this that) =
     now : (x : a) -> (y : a) -> f r2 x y -> f r1 x y
     now x y fr2xy = incr clOpf r2 r1 that x y fr2xy
 
+equivClosureClosure : (f,g : Rel a -> Rel a) ->
+                      ((rel : Rel a) -> f rel `Equivalent` g rel) ->
+                      ClosureOperator f ->
+                      ClosureOperator g
+equivClosureClosure f g fg clOpf@(MkClosureOperator infl incr idem) =
+  MkClosureOperator (\rel,x,y,xy => to (fg rel) x y (infl _ _ _ xy))
+                    (\r1,r2,r1r2,x,y,xy =>
+                       let bag : (f r1 x y) = from (fg r1) x y xy
+                           hum = incr r1 r2 r1r2 x y bag
+                       in to (fg r2) x y hum)
+                    (\rel =>
+                       let gf = symm equivalentIsEquivalence _ _ (fg rel)
+                           bar = closureOperatorPreservesEquiv f clOpf _ _ (fg rel)
+                           quux : (f (f rel) `Equivalent` g (g rel))
+                                = trns equivalentIsEquivalence _ _ _ bar (fg (g rel))
+                           hoop = trns equivalentIsEquivalence _ _ _ (idem rel) quux
+                       in trns equivalentIsEquivalence _ _ _ gf hoop)
 
 ||| The intersection of a family of sets, each of which is closed under
 ||| a closure operator, is itself closed.
@@ -73,6 +181,19 @@ closureCoarsestClosedFiner : (f : Rel a -> Rel a) ->
 closureCoarsestClosedFiner {a} f (MkClosureOperator infl incr idem) rel r crsrelr (MkEquivalent g h) x y frelxy =
   let frxy = incr rel r crsrelr x y frelxy
   in h x y frxy
+
+closureOperatorIsClosureUnderFixed : (f : Rel a -> Rel a) ->
+                                     ClosureOperator f ->
+                                     IsClosureUnderPred (Fixed f) f
+closureOperatorIsClosureUnderFixed {a} f clOpf@(MkClosureOperator inflf incrf idemf) rel =
+  MkIsClosureUnderPredOf (inflf rel) (idemf rel) (fin clOpf)
+  where
+    fin : ClosureOperator f -> (c : a -> a -> Type) ->
+          ((x : a) -> (y : a) -> rel x y -> c x y) ->
+          Equivalent c (f c) ->
+          (x, y : a) -> f rel x y -> c x y
+    fin clOpf c relc cfc x y frelxy =
+      closureCoarsestClosedFiner f clOpf rel c relc cfc x y frelxy
 
 compositionInflInfl : (f, g : Rel a -> Rel a) ->
                       Inflationary f ->
